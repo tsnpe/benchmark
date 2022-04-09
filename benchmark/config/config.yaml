@@ -12,7 +12,7 @@ seed: null
 
 hydra:
   run:
-    dir: ../../results/sbibm/${now:%Y_%m_%d}/${now:%H_%M_%S}/0
+    dir: ../results/${now:%Y_%m_%d}/${now:%H_%M_%S}/0
   sweep:
-    dir: ../../results/sbibm/${now:%Y_%m_%d}/${now:%H_%M_%S}_m
+    dir: ../results/${now:%Y_%m_%d}/${now:%H_%M_%S}_m
     subdir: ${hydra.job.num}

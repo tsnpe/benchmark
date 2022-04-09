@@ -19,7 +19,7 @@ from sbibm.utils.io import (
     save_float_to_csv,
     save_tensor_to_csv,
 )
-from tsnpe.sbibm.run_tsnpe import run
+from benchmark.run_tsnpe import run
 
 
 @hydra.main(config_path="config", config_name="config")

@@ -62,6 +62,13 @@ def run(
 
     log = logging.getLogger(__name__)
 
+    # For TSNPE: we want to get the the fraction of gt posterior samples that are
+    # accepted. For this, we have to load the reference posterior samples.
+    # Load task
+    reference_posterior_samples = task.get_reference_posterior_samples(num_observation)[
+        :10000, :
+    ]
+
     if num_rounds == 1:
         log.info(f"Running NPE")
         num_simulations_per_round = num_simulations
@@ -99,6 +106,8 @@ def run(
     inference_method = inference.SNPE_C(prior, density_estimator=density_estimator_fun)
     posteriors = []
     proposal = prior
+    acceptance_rates = []
+    gt_acceptances = []
 
     for _ in range(num_rounds):
         theta, x = inference.simulate_for_sbi(
@@ -107,6 +116,21 @@ def run(
             num_simulations=num_simulations_per_round,
             simulation_batch_size=simulation_batch_size,
         )
+        # Compute acceptance rate
+        if isinstance(proposal, PosteriorSupport):
+            _, acceptance_rate = proposal.sample((10_000,), return_acceptance_rate=True)
+            acceptance_rate = acceptance_rate.item()
+        else:
+            acceptance_rate = 1.0
+        acceptance_rates.append(acceptance_rate)
+
+        # Compute fraction of accepted gt samples
+        if isinstance(proposal, PosteriorSupport):
+            accepted_or_not = proposal.predict(reference_posterior_samples)
+            gt_acceptance = (torch.sum(accepted_or_not) / 10000).item()
+        else:
+            gt_acceptance = 1.0
+        gt_acceptances.append(gt_acceptance)
 
         _ = inference_method.append_simulations(theta, x).train(
             num_atoms=num_atoms,
@@ -140,6 +164,6 @@ def run(
     if num_observation is not None:
         true_parameters = task.get_true_parameters(num_observation=num_observation)
         log_prob_true_parameters = posterior.log_prob(true_parameters)
-        return samples, simulator.num_simulations, log_prob_true_parameters
+        return samples, simulator.num_simulations, log_prob_true_parameters, torch.as_tensor(acceptance_rates), torch.as_tensor(gt_acceptances)
     else:
-        return samples, simulator.num_simulations, None
+        return samples, simulator.num_simulations, None, torch.as_tensor(acceptance_rates), torch.as_tensor(gt_acceptances)

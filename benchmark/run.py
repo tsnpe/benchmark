@@ -44,6 +44,8 @@ def main(cfg: DictConfig) -> None:
     path_log_prob_true_parameters = "log_prob_true_parameters.csv"
     path_num_simulations_simulator = "num_simulations_simulator.csv"
     path_predictive_samples = "predictive_samples.csv.bz2"
+    path_acceptance_rate = "acceptance_rate.csv.bz2"
+    path_gt_acceptance = "gt_acceptance_rate.csv.bz2"
 
     # Run
     task = sbibm.get_task(cfg.task.name)
@@ -71,12 +73,32 @@ def main(cfg: DictConfig) -> None:
         log_prob_true_parameters = (
             float(outputs[2]) if outputs[2] is not None else float("nan")
         )
+    elif type(outputs) == tuple and len(outputs) == 5:
+        samples = outputs[0]
+        num_simulations_simulator = float(outputs[1])
+        log_prob_true_parameters = (
+            float(outputs[2]) if outputs[2] is not None else float("nan")
+        )
+        acceptance_rate_each_round = outputs[3]
+        gt_rate_each_round = outputs[4]
     else:
         raise NotImplementedError
     save_tensor_to_csv(path_samples, samples, columns=task.get_labels_parameters())
     save_float_to_csv(path_runtime, runtime)
     save_float_to_csv(path_num_simulations_simulator, num_simulations_simulator)
     save_float_to_csv(path_log_prob_true_parameters, log_prob_true_parameters)
+
+    # additional for TSNPE
+    save_tensor_to_csv(
+        path_acceptance_rate,
+        torch.flatten(acceptance_rate_each_round).unsqueeze(0),
+        columns=[str(ii + 1) for ii in range(10)],
+    )
+    save_tensor_to_csv(
+        path_gt_acceptance,
+        torch.flatten(gt_rate_each_round).unsqueeze(0),
+        columns=[str(ii + 1) for ii in range(10)],
+    )
 
     # Predictive samples
     log.info("Draw posterior predictive samples")
@@ -106,6 +128,8 @@ def main(cfg: DictConfig) -> None:
             path_runtime=path_runtime,
             path_predictive_samples=path_predictive_samples,
             path_log_prob_true_parameters=path_log_prob_true_parameters,
+            path_acceptance_rate=path_acceptance_rate,
+            path_gt_acceptance=path_gt_acceptance,
             log=log,
         )
         df_metrics.to_csv("metrics.csv", index=False)
@@ -131,6 +155,8 @@ def compute_metrics_df(
     path_runtime: str,
     path_predictive_samples: str,
     path_log_prob_true_parameters: str,
+    path_acceptance_rate: str,
+    path_gt_acceptance: str,
     log: logging.Logger = logging.getLogger(__name__),
 ) -> pd.DataFrame:
     """Compute all metrics, returns dataframe
@@ -182,6 +208,12 @@ def compute_metrics_df(
         get_float_from_csv(path_log_prob_true_parameters)
     )  # noqa
 
+    # Get log prob true parameters
+    acceptance_rates = torch.tensor(get_tensor_from_csv(path_acceptance_rate))  # noqa
+
+    # Get log prob true parameters
+    gt_acceptances = torch.tensor(get_tensor_from_csv(path_gt_acceptance))  # noqa
+
     # Names of all metrics as keys, values are calls that are passed to eval
     # NOTE: Originally, we computed a large number of metrics, as reflected in the
     # dictionary below. Ultimately, we used 10k samples and z-scoring for C2ST but
@@ -192,20 +224,9 @@ def compute_metrics_df(
         # 10k samples
         #
         "C2ST": "metrics.c2st(X=reference_posterior_samples, Y=algorithm_posterior_samples, z_score=False)",
-        "C2ST_Z": "metrics.c2st(X=reference_posterior_samples, Y=algorithm_posterior_samples, z_score=True)",
         "MMD": "metrics.mmd(X=reference_posterior_samples, Y=algorithm_posterior_samples, z_score=False)",
-        "MMD_Z": "metrics.mmd(X=reference_posterior_samples, Y=algorithm_posterior_samples, z_score=True)",
         "KSD_GAUSS": "metrics.ksd(task=task, num_observation=num_observation, samples=algorithm_posterior_samples, sig2=float(torch.median(torch.pdist(reference_posterior_samples))**2), log=False)",
         "MEDDIST": "metrics.median_distance(predictive_samples, observation)",
-        #
-        # 1K samples
-        #
-        "C2ST_1K": "metrics.c2st(X=reference_posterior_samples[:1000,:], Y=algorithm_posterior_samples[:1000,:], z_score=False)",
-        "C2ST_1K_Z": "metrics.c2st(X=reference_posterior_samples[:1000,:], Y=algorithm_posterior_samples[:1000, :], z_score=True)",
-        "MMD_1K": "metrics.mmd(X=reference_posterior_samples[:1000,:], Y=algorithm_posterior_samples[:1000, :], z_score=False)",
-        "MMD_1K_Z": "metrics.mmd(X=reference_posterior_samples[:1000,:], Y=algorithm_posterior_samples[:1000, :], z_score=True)",
-        "KSD_GAUSS_1K": "metrics.ksd(task=task, num_observation=num_observation, samples=algorithm_posterior_samples[:1000, :], sig2=float(torch.median(torch.pdist(reference_posterior_samples))**2), log=False)",
-        "MEDDIST_1K": "metrics.median_distance(predictive_samples[:1000,:], observation)",
         #
         # Not based on samples
         #
@@ -215,7 +236,13 @@ def compute_metrics_df(
 
     import sbibm.metrics as metrics  # noqa
 
-    metrics_dict = {}
+    metrics_dict = {
+        "acceptance rate": torch.flatten(acceptance_rates)
+        .unsqueeze(0)
+        .numpy()
+        .tolist(),
+        "gt in support": torch.flatten(gt_acceptances).unsqueeze(0).numpy().tolist(),
+    }
     for metric, eval_cmd in _METRICS_.items():
         log.info(f"Computing {metric}")
         try:
@@ -224,6 +251,7 @@ def compute_metrics_df(
         except:
             metrics_dict[metric] = float("nan")
 
+    print("metrics_dict", metrics_dict)
     return pd.DataFrame(metrics_dict)
 
 

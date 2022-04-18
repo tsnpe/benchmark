@@ -177,9 +177,7 @@ def compile_df(
         # Take log of KSD metric
         # NOTE: Since we originally did not log KSD, this is done post-hoc here
         row["KSD"] = math.log(row["KSD_GAUSS"])
-        row["KSD_1K"] = math.log(row["KSD_GAUSS_1K"])
         del row["KSD_GAUSS"]
-        del row["KSD_GAUSS_1K"]
 
         # Runtime
         # While almost all runs were executed on AWS hardware under the same conditions,

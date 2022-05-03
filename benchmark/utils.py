@@ -174,11 +174,6 @@ def compile_df(
             if path_log_prob_true_parameters.exists():
                 row["NLTP"] = -1.0 * get_float_from_csv(path_log_prob_true_parameters)
 
-        # Take log of KSD metric
-        # NOTE: Since we originally did not log KSD, this is done post-hoc here
-        row["KSD"] = math.log(row["KSD_GAUSS"])
-        del row["KSD_GAUSS"]
-
         # Runtime
         # While almost all runs were executed on AWS hardware under the same conditions,
         # this was not the case for 100% of the runs. To prevent uneven comparison,

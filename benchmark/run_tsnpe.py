@@ -36,6 +36,8 @@ def run(
     allowed_false_negatives: float = 0.0,
     use_constrained_prior: bool = False,
     constrained_prior_quanitle: float = 0.0,
+    proposal_sampling: str = "rejection",
+    sir_oversample: int = 1024,
 ) -> Tuple[torch.Tensor, int, Optional[torch.Tensor]]:
     """Runs (S)NPE from `sbi`
     Args:
@@ -117,7 +119,7 @@ def run(
             simulation_batch_size=simulation_batch_size,
         )
         # Compute acceptance rate
-        if isinstance(proposal, PosteriorSupport):
+        if isinstance(proposal, PosteriorSupport) and proposal_sampling == "rejection":
             _, acceptance_rate = proposal.sample((10_000,), return_acceptance_rate=True)
             acceptance_rate = acceptance_rate.item()
         else:
@@ -151,6 +153,8 @@ def run(
             allowed_false_negatives=allowed_false_negatives,
             use_constrained_prior=use_constrained_prior,
             constrained_prior_quanitle=constrained_prior_quanitle,
+            sampling_method=proposal_sampling,
+            sir_oversample=sir_oversample,
         )
         proposal = posterior_support
         posteriors.append(posterior)
@@ -164,6 +168,18 @@ def run(
     if num_observation is not None:
         true_parameters = task.get_true_parameters(num_observation=num_observation)
         log_prob_true_parameters = posterior.log_prob(true_parameters)
-        return samples, simulator.num_simulations, log_prob_true_parameters, torch.as_tensor(acceptance_rates), torch.as_tensor(gt_acceptances)
+        return (
+            samples,
+            simulator.num_simulations,
+            log_prob_true_parameters,
+            torch.as_tensor(acceptance_rates),
+            torch.as_tensor(gt_acceptances),
+        )
     else:
-        return samples, simulator.num_simulations, None, torch.as_tensor(acceptance_rates), torch.as_tensor(gt_acceptances)
+        return (
+            samples,
+            simulator.num_simulations,
+            None,
+            torch.as_tensor(acceptance_rates),
+            torch.as_tensor(gt_acceptances),
+        )

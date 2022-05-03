@@ -12,3 +12,5 @@ params:
   use_constrained_prior: false
   constrained_prior_quanitle: 0.0
   max_num_epochs: 100000
+  proposal_sampling: "rejection"
+  sir_oversample: 1024

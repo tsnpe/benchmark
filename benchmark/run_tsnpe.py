@@ -119,7 +119,7 @@ def run(
             simulation_batch_size=simulation_batch_size,
         )
         # Compute acceptance rate
-        if isinstance(proposal, PosteriorSupport) and proposal_sampling == "rejection":
+        if isinstance(proposal, PosteriorSupport):
             _, acceptance_rate = proposal.sample((10_000,), return_acceptance_rate=True)
             acceptance_rate = acceptance_rate.item()
         else:

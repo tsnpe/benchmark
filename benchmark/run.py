@@ -45,6 +45,7 @@ def main(cfg: DictConfig) -> None:
     path_num_simulations_simulator = "num_simulations_simulator.csv"
     path_predictive_samples = "predictive_samples.csv.bz2"
     path_acceptance_rate = "acceptance_rate.csv.bz2"
+    path_importance_weight = "path_importance_weight.csv.bz2"
     path_gt_acceptance = "gt_acceptance_rate.csv.bz2"
 
     # Run
@@ -73,7 +74,7 @@ def main(cfg: DictConfig) -> None:
         log_prob_true_parameters = (
             float(outputs[2]) if outputs[2] is not None else float("nan")
         )
-    elif type(outputs) == tuple and len(outputs) == 5:
+    elif type(outputs) == tuple and len(outputs) == 6:
         samples = outputs[0]
         num_simulations_simulator = float(outputs[1])
         log_prob_true_parameters = (
@@ -81,6 +82,7 @@ def main(cfg: DictConfig) -> None:
         )
         acceptance_rate_each_round = outputs[3]
         gt_rate_each_round = outputs[4]
+        iw_variances = outputs[5]
     else:
         raise NotImplementedError
     save_tensor_to_csv(path_samples, samples, columns=task.get_labels_parameters())
@@ -92,6 +94,16 @@ def main(cfg: DictConfig) -> None:
     save_tensor_to_csv(
         path_acceptance_rate,
         torch.flatten(acceptance_rate_each_round).unsqueeze(0),
+        columns=[str(ii + 1) for ii in range(10)],
+    )
+    save_tensor_to_csv(
+        path_importance_weight,
+        torch.flatten(iw_variances).unsqueeze(0),
+        columns=[str(ii + 1) for ii in range(10)],
+    )
+    save_tensor_to_csv(
+        path_gt_acceptance,
+        torch.flatten(gt_rate_each_round).unsqueeze(0),
         columns=[str(ii + 1) for ii in range(10)],
     )
     save_tensor_to_csv(
@@ -130,6 +142,7 @@ def main(cfg: DictConfig) -> None:
             path_log_prob_true_parameters=path_log_prob_true_parameters,
             path_acceptance_rate=path_acceptance_rate,
             path_gt_acceptance=path_gt_acceptance,
+            path_iw_variance=path_importance_weight,
             log=log,
         )
         df_metrics.to_csv("metrics.csv", index=False)
@@ -157,6 +170,7 @@ def compute_metrics_df(
     path_log_prob_true_parameters: str,
     path_acceptance_rate: str,
     path_gt_acceptance: str,
+    path_iw_variance: str,
     log: logging.Logger = logging.getLogger(__name__),
 ) -> pd.DataFrame:
     """Compute all metrics, returns dataframe
@@ -214,6 +228,9 @@ def compute_metrics_df(
     # Get log prob true parameters
     gt_acceptances = torch.tensor(get_tensor_from_csv(path_gt_acceptance))  # noqa
 
+    # Get log prob true parameters
+    iw_variances = torch.tensor(get_tensor_from_csv(path_iw_variance))  # noqa
+
     # Names of all metrics as keys, values are calls that are passed to eval
     # NOTE: Originally, we computed a large number of metrics, as reflected in the
     # dictionary below. Ultimately, we used 10k samples and z-scoring for C2ST but
@@ -241,6 +258,7 @@ def compute_metrics_df(
         .numpy()
         .tolist(),
         "gt in support": torch.flatten(gt_acceptances).unsqueeze(0).numpy().tolist(),
+        "iw var": torch.flatten(iw_variances).unsqueeze(0).numpy().tolist(),
     }
     for metric, eval_cmd in _METRICS_.items():
         log.info(f"Computing {metric}")

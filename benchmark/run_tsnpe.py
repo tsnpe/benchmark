@@ -38,6 +38,7 @@ def run(
     constrained_prior_quanitle: float = 0.0,
     proposal_sampling: str = "rejection",
     sir_oversample: int = 1024,
+    atomic_loss: bool = False,
 ) -> Tuple[torch.Tensor, int, Optional[torch.Tensor]]:
     """Runs (S)NPE from `sbi`
     Args:
@@ -110,8 +111,9 @@ def run(
     proposal = prior
     acceptance_rates = []
     gt_acceptances = []
+    iw_variances = []
 
-    for _ in range(num_rounds):
+    for round_num in range(num_rounds):
         theta, x = inference.simulate_for_sbi(
             simulator,
             proposal,
@@ -120,10 +122,19 @@ def run(
         )
         # Compute acceptance rate
         if isinstance(proposal, PosteriorSupport):
-            _, acceptance_rate = proposal.sample((10_000,), return_acceptance_rate=True)
+            _, acceptance_rate, log_iw = proposal.sample(
+                (10_000,), return_acceptance_rate=True, return_iw=True
+            )
+            norm_log_iw = log_iw - torch.logsumexp(log_iw, 0)
+            iw = torch.exp(norm_log_iw)
+            summed_iw = torch.sum(iw)
+            assert summed_iw > 0.99 and summed_iw < 1.01
+            iw_variance = torch.var(iw).item()
             acceptance_rate = acceptance_rate.item()
         else:
             acceptance_rate = 1.0
+            iw_variance = 0.0
+        iw_variances.append(iw_variance)
         acceptance_rates.append(acceptance_rate)
 
         # Compute fraction of accepted gt samples
@@ -134,7 +145,18 @@ def run(
             gt_acceptance = 1.0
         gt_acceptances.append(gt_acceptance)
 
-        _ = inference_method.append_simulations(theta, x).train(
+        # This will not be used anyways, so we can just pass the posterior to make
+        # sure that SNPE use
+        if round_num > 0:
+            proposal_train = posterior if atomic_loss else None
+            force_first_round = False if atomic_loss else True
+        else:
+            proposal_train = None
+            force_first_round = True
+
+        _ = inference_method.append_simulations(
+            theta, x, proposal=proposal_train
+        ).train(
             num_atoms=num_atoms,
             training_batch_size=training_batch_size,
             retrain_from_scratch=False,
@@ -142,7 +164,7 @@ def run(
             use_combined_loss=False,
             show_train_summary=True,
             max_num_epochs=max_num_epochs,
-            force_first_round_loss=True,
+            force_first_round_loss=force_first_round,
         )
         posterior = inference_method.build_posterior()
         posterior = posterior.set_default_x(observation)
@@ -174,6 +196,7 @@ def run(
             log_prob_true_parameters,
             torch.as_tensor(acceptance_rates),
             torch.as_tensor(gt_acceptances),
+            torch.as_tensor(iw_variances),
         )
     else:
         return (
@@ -182,4 +205,5 @@ def run(
             None,
             torch.as_tensor(acceptance_rates),
             torch.as_tensor(gt_acceptances),
+            torch.as_tensor(iw_variances),
         )

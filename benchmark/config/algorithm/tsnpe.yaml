@@ -14,3 +14,4 @@ params:
   max_num_epochs: 100000
   proposal_sampling: "rejection"
   sir_oversample: 1024
+  atomic_loss: false

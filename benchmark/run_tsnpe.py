@@ -123,18 +123,20 @@ def run(
         # Compute acceptance rate
         if isinstance(proposal, PosteriorSupport):
             _, acceptance_rate, log_iw = proposal.sample(
-                (10_000,), return_acceptance_rate=True, return_iw=True
+                (100,), return_acceptance_rate=True, return_iw=True
             )
-            norm_log_iw = log_iw - torch.logsumexp(log_iw, 0)
+            log_iw = log_iw[:, :sir_oversample]
+            norm_log_iw = (log_iw.T - torch.logsumexp(log_iw, 1)).T
             iw = torch.exp(norm_log_iw)
-            summed_iw = torch.sum(iw)
-            assert summed_iw > 0.99 and summed_iw < 1.01
-            iw_variance = torch.var(iw).item()
+            summed_iw = torch.sum(iw, dim=1)
+            assert torch.all(summed_iw > 0.99) and torch.all(summed_iw < 1.01)
+            ess = 1 / torch.sum(iw**2, dim=1)
+            ess = torch.mean(ess).item()
             acceptance_rate = acceptance_rate.item()
         else:
             acceptance_rate = 1.0
-            iw_variance = 0.0
-        iw_variances.append(iw_variance)
+            ess = 0.0
+        iw_variances.append(ess)
         acceptance_rates.append(acceptance_rate)
 
         # Compute fraction of accepted gt samples
